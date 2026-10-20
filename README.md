@@ -5,7 +5,7 @@
 
 ## Запуск
 
-Нужен Node.js 20.19+ (в CI используется 22).
+Нужен Node.js 24 (версия указана в `.node-version`; с fnm: `fnm use`).
 
 ```sh
 npm ci

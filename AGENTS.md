@@ -5,6 +5,8 @@ TypeScript + Vite, тесты на Vitest. Интерфейс на русско�
 
 ## Команды
 
+Node.js — версия из `.node-version` (`fnm use`).
+
 - `npm ci` — установить зависимости.
 - `npm run dev` — дев-сервер.
 - `npm test` — юнит-тесты (`npm run test:watch` — в режиме наблюдения).
