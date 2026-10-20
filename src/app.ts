@@ -1,12 +1,12 @@
 import { formatAgo, pluralRu } from './format';
-import { letterPool, letters, type Group, type Letter } from './letters';
+import { BASE_LETTER_COUNT, letterPool, letters, type Group, type Letter } from './letters';
 import { matchesName, normalizeName } from './names';
 import { createQuestions, type Question, type Script } from './round';
+import { letterDetails } from './reference';
+import { hashForView, viewFromHash, type View } from './routes';
 import { pickRoundLetters, type Random } from './selection';
 import { recordAnswer, staleLetters, weakLetters, type Outcome } from './stats';
 import { addResult, loadState, resetStats, saveState, type KeyValueStorage, type Mode, type SavedState } from './storage';
-
-type View = Mode | 'alphabet';
 
 export interface AppOptions {
   storage: KeyValueStorage | null;
@@ -28,15 +28,18 @@ function glyph(l: Letter, type: 'print' | 'hand', cls = '', attrs = ''): string 
   return `<span lang="he" dir="rtl" class="${type === 'hand' ? 'hand ' : ''}${cls}"${attrs}>${l.char}</span>`;
 }
 
-export function startApp({ storage, now = Date.now, random = Math.random }: AppOptions): void {
+/** Starts the game on the current page; returns a function that removes global listeners. */
+export function startApp({ storage, now = Date.now, random = Math.random }: AppOptions): () => void {
   const board = required<HTMLElement>('#board');
+  const aside = required<HTMLElement>('aside');
+  const statsPanel = required<HTMLElement>('#letter-stats');
   const group = required<HTMLSelectElement>('#group');
   const script = required<HTMLSelectElement>('#script');
   const autoNext = required<HTMLInputElement>('#auto-next');
   const showAnswerForms = required<HTMLInputElement>('#show-answer-forms');
 
   let saved: SavedState = loadState(storage);
-  let view: View = 'quiz';
+  let view: View = viewFromHash(location.hash);
   let questions: Question[] = [];
   let index = 0;
   let score = 0;
@@ -98,7 +101,6 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     hintedScore = 0;
     misses = [];
     answered = false;
-    selected = p[0]?.id ?? 0;
     renderStatsPanel();
     render();
   }
@@ -127,12 +129,10 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
   }
 
   function renderStatsPanel() {
-    const panel = document.querySelector('#letter-stats');
-    if (!panel) return;
     const { history } = saved;
     const best = history.reduce((max, r) => Math.max(max, r.score), 0);
     const last = history.at(-1);
-    panel.innerHTML = `<div class="eyebrow">ТВОЯ СТАТИСТИКА</div><h3>Чаще ошибаешься</h3><div id="weak-letters">${weakLettersHtml()}</div><h3>Давно не встречались</h3><div id="stale-letters">${staleLettersHtml()}</div><p id="games-played" class="stats-games">${history.length ? `Сыграно ${history.length} ${pluralRu(history.length, ['раунд', 'раунда', 'раундов'])} · лучший результат: ${best} из ${ROUND_LENGTH}` : 'Сыгранных раундов пока нет.'}</p>${last ? `<p class="stats-games">Последний: «${modeNames[last.mode]}» — ${last.score} из ${last.total}</p>` : ''}<p class="setting-note">Такие буквы чаще попадают в новый раунд.</p>`;
+    statsPanel.innerHTML = `<div class="eyebrow">ТВОЯ СТАТИСТИКА</div><h3>Чаще ошибаешься</h3><div id="weak-letters">${weakLettersHtml()}</div><h3>Давно не встречались</h3><div id="stale-letters">${staleLettersHtml()}</div><p id="games-played" class="stats-games">${history.length ? `Сыграно ${history.length} ${pluralRu(history.length, ['раунд', 'раунда', 'раундов'])} · лучший результат: ${best} из ${ROUND_LENGTH}` : 'Сыгранных раундов пока нет.'}</p>${last ? `<p class="stats-games">Последний: «${modeNames[last.mode]}» — ${last.score} из ${last.total}</p>` : ''}<p class="setting-note">Такие буквы чаще попадают в новый раунд.</p>`;
   }
 
   function stageHtml(q: Question) {
@@ -146,8 +146,11 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
       b.classList.toggle('active', b.dataset.view === view);
       b.setAttribute('aria-current', b.dataset.view === view ? 'page' : 'false');
     });
-    script.disabled = view === 'alphabet';
-    if (view === 'alphabet') return renderAlphabet();
+    const reference = view === 'alphabet';
+    aside.hidden = reference;
+    statsPanel.hidden = reference;
+    board.parentElement?.classList.toggle('reference', reference);
+    if (reference) return renderAlphabet();
     if (index >= ROUND_LENGTH) return renderResult();
     const q = currentQuestion();
     const pairing = view === 'pairs';
@@ -275,21 +278,43 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
 
   function renderResult() {
     const unique = [...new Map([...misses, ...questions.filter((q) => q.hintUsed).map((q) => q.letter)].map((l) => [l.id, l])).values()];
-    board.innerHTML = `<div class="result"><div class="result-icon" aria-hidden="true">${score >= 8 ? '✦' : 'א'}</div><h2>${score === ROUND_LENGTH ? 'Все буквы узнаны!' : score >= 7 ? 'Отличный раунд!' : 'Ещё немного практики'}</h2><div class="big-score">${score}<span class="sub"> / ${ROUND_LENGTH}</span></div><div class="result-stats"><span>Самостоятельно: <b>${score}</b></span><span>С подсказкой: <b>${hintedScore}</b></span><span>Ошибки: <b>${misses.length}</b></span></div><p>${score === ROUND_LENGTH ? 'Попробуй письменные буквы или следующий набор.' : 'Каждая попытка помогает запомнить форму.<br>Можно повторить раунд без спешки.'}</p><button class="primary" id="again">Сыграть ещё раз</button>${unique.length ? `<div class="review"><strong>Буквы для повторения</strong><p>${unique.map((l) => `<span>${glyph(l, 'print')} ${l.name}</span>`).join('')}</p><button class="hint" id="review">Рассмотреть в алфавите</button></div>` : ''}<div class="review result-letter-stats"><strong>Чаще ошибаешься</strong>${weakLettersHtml()}<strong>Давно не встречались</strong>${staleLettersHtml()}</div></div>`;
+    board.innerHTML = `<div class="result"><div class="result-icon" aria-hidden="true">${score >= 8 ? '✦' : 'א'}</div><h2>${score === ROUND_LENGTH ? 'Все буквы узнаны!' : score >= 7 ? 'Отличный раунд!' : 'Ещё немного практики'}</h2><div class="big-score">${score}<span class="sub"> / ${ROUND_LENGTH}</span></div><div class="result-stats"><span>Самостоятельно: <b>${score}</b></span><span>С подсказкой: <b>${hintedScore}</b></span><span>Ошибки: <b>${misses.length}</b></span></div><p>${score === ROUND_LENGTH ? 'Попробуй письменные буквы или следующий набор.' : 'Каждая попытка помогает запомнить форму.<br>Можно повторить раунд без спешки.'}</p><button class="primary" id="again">Сыграть ещё раз</button>${unique.length ? `<div class="review"><strong>Буквы для повторения</strong><p>${unique.map((l) => `<span>${glyph(l, 'print')} ${l.name}</span>`).join('')}</p><button class="hint" id="review">Рассмотреть в алфавите</button></div>` : ''}</div>`;
     required<HTMLButtonElement>('#again').onclick = begin;
     const r = document.querySelector<HTMLButtonElement>('#review');
     if (r)
       r.onclick = () => {
-        view = 'alphabet';
         selected = unique[0]?.id ?? 0;
-        render();
+        navigate('alphabet');
       };
+  }
+
+  function letterCards(list: Letter[]) {
+    return `<div class="alphabet-grid">${list.map((x) => `<button class="letter-card ${x.id === selected ? 'selected' : ''}" data-letter="${x.id}" aria-label="${x.name}" aria-pressed="${x.id === selected}"><span class="forms">${glyph(x, 'print')}${glyph(x, 'hand')}</span><small>${x.name}</small></button>`).join('')}</div>`;
+  }
+
+  function letterChips(list: Letter[]) {
+    return list.map((x) => `<button class="letter-chip" data-letter="${x.id}">${glyph(x, 'print')} ${x.name}</button>`).join(' ');
+  }
+
+  function detailHtml(l: Letter) {
+    const d = letterDetails(l);
+    const final = l.id >= BASE_LETTER_COUNT;
+    const word = [...d.example.word].map((c) => (c === l.char ? `<b>${c}</b>` : c)).join('');
+    const facts = [
+      `<dt>Как звучит</dt><dd>${l.sound}</dd>`,
+      `<dt>Пример</dt><dd><span class="example-word" lang="he" dir="rtl">${word}</span> ${d.example.transcription} — «${d.example.translation}»</dd>`,
+      d.order ? `<dt>Место в алфавите</dt><dd>${d.order}-я буква из ${BASE_LETTER_COUNT}</dd>` : '',
+      `<dt>Числовое значение</dt><dd>${d.value}${final ? ', как у обычной формы' : ''}</dd>`,
+      d.pair ? `<dt>${final ? 'Обычная форма' : 'Конечная форма'}</dt><dd>${letterChips([d.pair])}</dd>` : '',
+      d.similar.length ? `<dt>Похожи на вид</dt><dd>${letterChips(d.similar)}</dd>` : '',
+      d.soundsLike.length ? `<dt>Звучат так же</dt><dd>${letterChips(d.soundsLike)}</dd>` : '',
+    ].join('');
+    return `<div class="detail" aria-live="polite"><h3>${l.name} <span class="hebrew-name" lang="he" dir="rtl">${d.hebrewName}</span></h3><div class="both"><div>${glyph(l, 'print', 'glyph')}<small>печатная</small></div><div>${glyph(l, 'hand', 'glyph')}<small>письменная</small></div></div><p>${l.hint}</p><dl class="facts">${facts}</dl></div>`;
   }
 
   function renderAlphabet() {
     const l = letters[selected] ?? letters[0]!;
-    const p = pool();
-    board.innerHTML = `<div class="round-head"><span>Твой справочник</span><span class="pill">${p.length} ${p.length === 22 ? 'БУКВЫ' : 'ФОРМ'}</span></div><h2>Печатная + письменная</h2><p class="sub">Нажми на букву: узнай её название и звук.</p><div class="alphabet-grid">${p.map((x) => `<button class="letter-card ${x.id === selected ? 'selected' : ''}" data-letter="${x.id}" aria-label="${x.name}" aria-pressed="${x.id === selected}"><span class="forms">${glyph(x, 'print')}${glyph(x, 'hand')}</span><small>${x.name}</small></button>`).join('')}</div><div class="detail" aria-live="polite"><h3>${l.name}</h3><div class="both"><div>${glyph(l, 'print', 'glyph')}<small>печатная</small></div><div>${glyph(l, 'hand', 'glyph')}<small>письменная</small></div></div><p><strong>Как звучит:</strong> ${l.sound}</p><p>${l.hint}</p></div><p class="sub">Бет/вет, каф/хаф, пей/фей и шин/син — варианты звучания одной буквы. В игре мы используем её основное название. Почерк от руки может немного отличаться от образца.</p>`;
+    board.innerHTML = `<div class="round-head"><span>Твой справочник</span><span class="pill">${BASE_LETTER_COUNT} БУКВЫ + ${letters.length - BASE_LETTER_COUNT} КОНЕЧНЫХ</span></div><h2>Печатная + письменная</h2><p class="sub">Нажми на букву: узнай её название, звук и пример слова.</p>${letterCards(letters.slice(0, BASE_LETTER_COUNT))}<h3 class="alphabet-section">Конечные формы</h3>${letterCards(letters.slice(BASE_LETTER_COUNT))}${detailHtml(l)}<p class="sub">Бет/вет, каф/хаф, пей/фей и шин/син — варианты звучания одной буквы. В игре мы используем её основное название. Почерк от руки может немного отличаться от образца.</p>`;
     board.querySelectorAll<HTMLElement>('[data-letter]').forEach(
       (b) =>
         (b.onclick = () => {
@@ -300,13 +325,20 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     if (!handReady) fontNotice();
   }
 
-  document.querySelectorAll<HTMLElement>('[data-view]').forEach(
-    (b) =>
-      (b.onclick = () => {
-        view = b.dataset.view as View;
-        begin();
-      }),
-  );
+  function navigate(v: View) {
+    view = v;
+    begin();
+    if (location.hash !== hashForView(v)) location.hash = hashForView(v);
+  }
+
+  function onHashChange() {
+    const v = viewFromHash(location.hash);
+    if (v === view) return;
+    view = v;
+    begin();
+  }
+
+  window.addEventListener('hashchange', onHashChange);
   group.onchange = () => {
     saveSettings();
     begin();
@@ -349,17 +381,23 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     settingsToggle.setAttribute('aria-expanded', String(open));
     required('#settings-panel').classList.toggle('is-open', open);
   };
-  document.addEventListener('keydown', (e) => {
+  function onKeyDown(e: KeyboardEvent) {
     if (!(e.target instanceof Element) || e.target.matches('select,input,textarea') || e.ctrlKey || e.altKey || e.metaKey) return;
     if (['1', '2', '3', '4'].includes(e.key) && (view === 'quiz' || view === 'pairs') && index < ROUND_LENGTH && !answered) {
       const b = board.querySelectorAll<HTMLButtonElement>('[data-answer]')[Number(e.key) - 1];
       if (b && !b.disabled) b.click();
     }
-  });
+  }
+  document.addEventListener('keydown', onKeyDown);
 
   begin();
   loadHandwritingFont();
   registerModelContextTools();
+  return () => {
+    cancelAdvance();
+    window.removeEventListener('hashchange', onHashChange);
+    document.removeEventListener('keydown', onKeyDown);
+  };
 
   function loadHandwritingFont() {
     if (!document.fonts?.load) {
@@ -403,8 +441,7 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
         inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['quiz', 'pairs', 'typed'] } }, required: ['mode'], additionalProperties: false },
         execute: (input: { mode?: unknown } | undefined) => {
           if (!input || !['quiz', 'pairs', 'typed'].includes(String(input.mode))) throw new Error('mode must be quiz, pairs or typed');
-          view = input.mode as Mode;
-          begin();
+          navigate(input.mode as Mode);
           return { view, question: 1, score };
         },
       },

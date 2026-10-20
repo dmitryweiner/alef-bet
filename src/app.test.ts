@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startApp } from './app';
 import { seededRandom } from './selection';
 import { STORAGE_KEY, loadState, saveState, emptyState, type KeyValueStorage } from './storage';
@@ -27,11 +27,133 @@ const $ = <T extends Element>(selector: string) => {
 };
 
 let storage: MemoryStorage;
-const start = () => startApp({ storage, now: () => NOW, random: seededRandom(5) });
+let stop: (() => void) | undefined;
+const start = () => (stop = startApp({ storage, now: () => NOW, random: seededRandom(5) }));
 
 beforeEach(() => {
   document.body.innerHTML = body;
   storage = new MemoryStorage();
+  history.replaceState(null, '', location.pathname);
+});
+
+afterEach(() => {
+  stop?.();
+  stop = undefined;
+});
+
+const nextHashChange = () => new Promise((resolve) => window.addEventListener('hashchange', resolve, { once: true }));
+const activeTab = () => $<HTMLElement>('[data-view].active').dataset.view;
+
+describe('page text', () => {
+  it('does not contain removed slogans', () => {
+    for (const phrase of ['Печатные и письменные. По одной, в твоём темпе.', 'БУКВЫ В ИГРЕ', 'Маленькие шаги. Новый язык.', '22 буквы · 5 конечных форм · без спешки']) {
+      expect(document.body.textContent).not.toContain(phrase);
+    }
+  });
+});
+
+describe('layout', () => {
+  it('keeps the settings toggle and the settings panel in one block', () => {
+    const box = $('.settings-box');
+    expect(box.contains($('#settings-toggle'))).toBe(true);
+    expect(box.contains($('#settings-panel'))).toBe(true);
+  });
+
+  it('places the letter statistics after the board, outside the settings column', () => {
+    start();
+    const stats = $('#letter-stats');
+    expect($('aside').contains(stats)).toBe(false);
+    expect($('#board').compareDocumentPosition(stats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('does not duplicate the statistics on the result screen', () => {
+    start();
+    for (let i = 0; i < 10; i++) answerAndContinue('correct');
+    expect(document.querySelector('.result-letter-stats')).toBeNull();
+  });
+});
+
+describe('navigation', () => {
+  it('shows tabs as links to game hashes without numbers', () => {
+    const tabs = [...document.querySelectorAll<HTMLAnchorElement>('nav [data-view]')];
+    expect(tabs.map((t) => t.getAttribute('href'))).toEqual(['#guess', '#type', '#pairs', '#alphabet']);
+    for (const t of tabs) expect(t.textContent).not.toMatch(/\d/);
+  });
+
+  it('opens the game from the hash on start', () => {
+    history.replaceState(null, '', '#pairs');
+    start();
+    expect(activeTab()).toBe('pairs');
+    expect(document.querySelector('.answer.hebrew')).not.toBeNull();
+  });
+
+  it('switches the game when the hash changes', async () => {
+    start();
+    expect(activeTab()).toBe('quiz');
+    const changed = nextHashChange();
+    location.hash = '#type';
+    await changed;
+    expect(activeTab()).toBe('typed');
+    expect(document.querySelector('#letter-name')).not.toBeNull();
+  });
+
+  it('updates the hash when reviewing letters in the alphabet', async () => {
+    saveState(storage, { ...emptyState(), settings: { group: 'all', script: 'print', autoNext: false, showAnswerForms: false } });
+    start();
+    for (let i = 0; i < 10; i++) answerAndContinue('first');
+    const changed = nextHashChange();
+    $<HTMLButtonElement>('#review').click();
+    await changed;
+    expect(location.hash).toBe('#alphabet');
+    expect(activeTab()).toBe('alphabet');
+  });
+});
+
+describe('alphabet reference', () => {
+  const openAlphabet = () => {
+    history.replaceState(null, '', '#alphabet');
+    start();
+  };
+
+  it('hides the settings and statistics', () => {
+    openAlphabet();
+    expect($<HTMLElement>('aside').hidden).toBe(true);
+    expect($<HTMLElement>('#letter-stats').hidden).toBe(true);
+  });
+
+  it('shows them again when going back to a game', async () => {
+    openAlphabet();
+    const changed = nextHashChange();
+    location.hash = '#guess';
+    await changed;
+    expect($<HTMLElement>('aside').hidden).toBe(false);
+    expect($<HTMLElement>('#letter-stats').hidden).toBe(false);
+  });
+
+  it('shows all letters with final forms regardless of the chosen set', () => {
+    saveState(storage, { ...emptyState(), settings: { group: 'final', script: 'print', autoNext: true, showAnswerForms: false } });
+    openAlphabet();
+    expect(document.querySelectorAll('.letter-card')).toHaveLength(27);
+  });
+
+  it('describes the selected letter in detail', () => {
+    openAlphabet();
+    $<HTMLButtonElement>('[data-letter="12"]').click();
+    const detail = $('.detail').textContent!;
+    expect(detail).toContain('Мем');
+    expect(detail).toContain('מם');
+    expect(detail).toContain('маим');
+    expect(detail).toContain('вода');
+    expect(detail).toContain('40');
+    expect(detail).toContain('13');
+  });
+
+  it('opens related letters from the detail card', () => {
+    openAlphabet();
+    $<HTMLButtonElement>('[data-letter="12"]').click();
+    $<HTMLButtonElement>('.detail [data-letter="23"]').click();
+    expect($('.detail h3').textContent).toContain('Мем софит');
+  });
 });
 
 describe('settings', () => {
