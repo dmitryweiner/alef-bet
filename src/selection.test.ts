@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { letters } from './letters';
-import { pickRoundLetters, seededRandom, weightedOrder } from './selection';
+import { ROUND_LENGTH, pickRoundLetters, roundLetters, seededRandom, weightedOrder } from './selection';
 import { emptyStat, type LetterStats } from './stats';
 
 const NOW = Date.UTC(2026, 9, 20);
@@ -66,5 +66,28 @@ describe('pickRoundLetters', () => {
     const typical = counts.get(0) ?? 0;
     expect(counts.get(4) ?? 0).toBeGreaterThan(typical * 1.3);
     expect(counts.get(9) ?? 0).toBeGreaterThan(typical * 1.3);
+  });
+});
+
+describe('roundLetters', () => {
+  it('picks a regular round of weighted letters from the chosen set', () => {
+    const picked = roundLetters('final', {}, NOW, seededRandom(1));
+    expect(picked).toHaveLength(ROUND_LENGTH);
+    for (const l of picked) expect(l.id).toBeGreaterThanOrEqual(22);
+  });
+
+  it('shows every letter, final forms included, exactly once in the "each" set', () => {
+    const picked = roundLetters('each', {}, NOW, seededRandom(2));
+    expect(picked).toHaveLength(27);
+    expect(new Set(picked.map((l) => l.id)).size).toBe(27);
+  });
+
+  it('ignores statistics and shuffles the "each" set uniformly', () => {
+    const stats: LetterStats = { 4: { shown: 10, correct: 0, hinted: 0, wrong: 10, lastSeen: 0 } };
+    const rng = seededRandom(9);
+    let first = 0;
+    for (let i = 0; i < 2700; i++) if (roundLetters('each', stats, NOW, rng)[0]?.id === 4) first++;
+    expect(first).toBeLessThan(200);
+    expect(roundLetters('each', {}, NOW, seededRandom(3)).map((l) => l.id)).not.toEqual(letters.map((l) => l.id));
   });
 });

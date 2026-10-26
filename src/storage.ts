@@ -80,7 +80,7 @@ export function resetStats(state: SavedState): SavedState {
   return { ...state, letterStats: {}, history: [] };
 }
 
-const groups: readonly Group[] = ['all', 'final', 'full'];
+const groups: readonly Group[] = ['all', 'final', 'full', 'each'];
 const scripts: readonly Script[] = ['print', 'hand', 'mixed'];
 const modes: readonly Mode[] = ['quiz', 'typed', 'pairs'];
 

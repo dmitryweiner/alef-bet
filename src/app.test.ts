@@ -121,13 +121,12 @@ describe('alphabet reference', () => {
     expect($<HTMLElement>('#letter-stats').hidden).toBe(true);
   });
 
-  it('shows them again when going back to a game', async () => {
+  it('shows the settings again when going back to a game', async () => {
     openAlphabet();
     const changed = nextHashChange();
     location.hash = '#guess';
     await changed;
     expect($<HTMLElement>('aside').hidden).toBe(false);
-    expect($<HTMLElement>('#letter-stats').hidden).toBe(false);
   });
 
   it('shows all letters with final forms regardless of the chosen set', () => {
@@ -146,6 +145,33 @@ describe('alphabet reference', () => {
     expect(detail).toContain('вода');
     expect(detail).toContain('40');
     expect(detail).toContain('13');
+  });
+
+  it('places the letter description above the alphabet', () => {
+    openAlphabet();
+    expect($('.detail').compareDocumentPosition($('.alphabet-grid')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('lets the player close the description and opens it again on a letter tap', () => {
+    openAlphabet();
+    $<HTMLButtonElement>('[data-letter="12"]').click();
+    $<HTMLButtonElement>('#detail-close').click();
+    expect(document.querySelector('.detail')).toBeNull();
+    expect(document.querySelector('.letter-card[aria-pressed="true"]')).toBeNull();
+    $<HTMLButtonElement>('[data-letter="3"]').click();
+    expect($('.detail h3').textContent).toContain('Далет');
+  });
+
+  it('opens the description when reviewing letters after a round', async () => {
+    saveState(storage, { ...emptyState(), settings: { group: 'all', script: 'print', autoNext: false, showAnswerForms: false } });
+    openAlphabet();
+    $<HTMLButtonElement>('#detail-close').click();
+    const changed = nextHashChange();
+    location.hash = '#guess';
+    await changed;
+    for (let i = 0; i < 10; i++) answerAndContinue('first');
+    $<HTMLButtonElement>('#review').click();
+    expect(document.querySelector('.detail')).not.toBeNull();
   });
 
   it('opens related letters from the detail card', () => {
@@ -178,7 +204,7 @@ describe('settings', () => {
   });
 
   it('works when storage is unavailable', () => {
-    startApp({ storage: null, now: () => NOW, random: seededRandom(1) });
+    stop = startApp({ storage: null, now: () => NOW, random: seededRandom(1) });
     expect(document.querySelectorAll('[data-answer]')).toHaveLength(4);
   });
 });
@@ -222,6 +248,75 @@ describe('game results', () => {
     expect(history).toEqual([{ finishedAt: NOW, mode: 'quiz', group: 'all', script: 'print', score: 10, hinted: 0, errors: 0, total: 10 }]);
     expect(storage.data.has(STORAGE_KEY)).toBe(true);
     expect($('#games-played').textContent).toContain('1');
+  });
+});
+
+describe('statistics visibility', () => {
+  it('hides the letter statistics during a round so they cannot be used as hints', () => {
+    start();
+    expect($<HTMLElement>('#letter-stats').hidden).toBe(true);
+    answerAndContinue('first');
+    expect($<HTMLElement>('#letter-stats').hidden).toBe(true);
+  });
+
+  it('shows the letter statistics on the result screen and hides them in the next round', () => {
+    saveState(storage, { ...emptyState(), settings: { group: 'all', script: 'print', autoNext: false, showAnswerForms: false } });
+    start();
+    for (let i = 0; i < 10; i++) answerAndContinue('first');
+    expect($<HTMLElement>('#letter-stats').hidden).toBe(false);
+    $<HTMLButtonElement>('#again').click();
+    expect($<HTMLElement>('#letter-stats').hidden).toBe(true);
+  });
+
+  it('compares the best result relative to the round length', () => {
+    saveState(storage, {
+      ...emptyState(),
+      history: [
+        { finishedAt: NOW, mode: 'quiz', group: 'each', script: 'print', score: 20, hinted: 0, errors: 7, total: 27 },
+        { finishedAt: NOW, mode: 'quiz', group: 'all', script: 'print', score: 9, hinted: 0, errors: 1, total: 10 },
+      ],
+    });
+    start();
+    expect($('#games-played').textContent).toContain('лучший результат: 9 из 10');
+  });
+});
+
+describe('whole alphabet round', () => {
+  const startEach = () => {
+    saveState(storage, { ...emptyState(), settings: { group: 'each', script: 'print', autoNext: false, showAnswerForms: false } });
+    start();
+  };
+
+  it('is offered in the letter set setting', () => {
+    expect([...$<HTMLSelectElement>('#group').options].map((o) => o.value)).toContain('each');
+  });
+
+  it('asks about all 27 letters once and saves a 27-question result', () => {
+    startEach();
+    expect($('.round-head').textContent).toContain('Вопрос 1 из 27');
+    expect($('.session').textContent).toContain('из 27');
+    const seen = new Set<number>();
+    for (let i = 0; i < 27; i++) seen.add(answerAndContinue('correct'));
+    expect(seen.size).toBe(27);
+    expect($('.big-score').textContent).toContain('27');
+    expect($('.result').textContent).toContain('Все буквы узнаны');
+    expect(loadState(storage).history.at(-1)).toMatchObject({ group: 'each', score: 27, total: 27 });
+  });
+
+  it('works in the typing and pairs games', async () => {
+    startEach();
+    for (const hash of ['#type', '#pairs']) {
+      const changed = nextHashChange();
+      location.hash = hash;
+      await changed;
+      expect($('.round-head').textContent).toContain('из 27');
+    }
+  });
+
+  it('keeps regular rounds at 10 questions', () => {
+    start();
+    expect($('.round-head').textContent).toContain('Вопрос 1 из 10');
+    expect($('.session').textContent).toContain('из 10');
   });
 });
 

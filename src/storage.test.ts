@@ -86,6 +86,19 @@ describe('loadState', () => {
   });
 });
 
+describe('loadState with the "each" set', () => {
+  it('keeps the setting and 27-question results', () => {
+    const storage = new MemoryStorage();
+    const state: SavedState = {
+      settings: { ...DEFAULT_SETTINGS, group: 'each' },
+      letterStats: {},
+      history: [{ ...result(20), group: 'each', errors: 7, total: 27 }],
+    };
+    saveState(storage, state);
+    expect(loadState(storage)).toEqual(state);
+  });
+});
+
 describe('saveState', () => {
   it('reports failure instead of throwing when storage is full', () => {
     const storage: KeyValueStorage = {

@@ -1,7 +1,9 @@
-import type { Letter } from './letters';
+import { letterPool, type Group, type Letter } from './letters';
 import { letterWeight, type LetterStats } from './stats';
 
 export type Random = () => number;
+
+export const ROUND_LENGTH = 10;
 
 /** Small deterministic PRNG (mulberry32) for tests. */
 export function seededRandom(seed: number): Random {
@@ -40,4 +42,11 @@ export function pickRoundLetters(pool: readonly Letter[], stats: LetterStats, no
     result.push(...pass);
   }
   return result.slice(0, count);
+}
+
+/** Letters for a round of the chosen set: the `each` set is every letter once in random order. */
+export function roundLetters(group: Group, stats: LetterStats, now: number, rng: Random): Letter[] {
+  const pool = letterPool(group);
+  if (group === 'each') return shuffle(pool, rng);
+  return pickRoundLetters(pool, stats, now, ROUND_LENGTH, rng);
 }

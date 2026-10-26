@@ -43,7 +43,8 @@ export const letters: Letter[] = data.map(([char, name, sound, hint, gameHint], 
 
 export const BASE_LETTER_COUNT = 22;
 
-export type Group = 'all' | 'final' | 'full';
+/** `each` is the whole alphabet with final forms, every letter once per round. */
+export type Group = 'all' | 'final' | 'full' | 'each';
 
 export function letterPool(group: Group): Letter[] {
   if (group === 'all') return letters.slice(0, BASE_LETTER_COUNT);
