@@ -41,6 +41,10 @@ describe('loadState', () => {
     expect(emptyState().settings).toEqual(DEFAULT_SETTINGS);
   });
 
+  it('keeps auto-advance off by default', () => {
+    expect(DEFAULT_SETTINGS.autoNext).toBe(false);
+  });
+
   it('returns defaults for corrupted JSON', () => {
     const storage = new MemoryStorage();
     storage.setItem(STORAGE_KEY, '{oops');

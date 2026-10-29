@@ -198,9 +198,22 @@ describe('settings', () => {
     group.value = 'full';
     group.dispatchEvent(new Event('change'));
     const autoNext = $<HTMLInputElement>('#auto-next');
-    autoNext.checked = false;
+    autoNext.checked = true;
     autoNext.dispatchEvent(new Event('change'));
-    expect(loadState(storage).settings).toMatchObject({ group: 'full', autoNext: false });
+    expect(loadState(storage).settings).toMatchObject({ group: 'full', autoNext: true });
+  });
+
+  it.each(['#guess', '#type', '#pairs'])('turns auto-advance off by default in %s', (hash) => {
+    history.replaceState(null, '', hash);
+    start();
+    expect($<HTMLInputElement>('#auto-next').checked).toBe(false);
+  });
+
+  it('waits for the player before the next question by default', () => {
+    start();
+    document.querySelector<HTMLButtonElement>('[data-answer]')!.click();
+    expect($('#next').textContent).toBe('Далее');
+    expect($<HTMLButtonElement>('#pause').hidden).toBe(true);
   });
 
   it('works when storage is unavailable', () => {

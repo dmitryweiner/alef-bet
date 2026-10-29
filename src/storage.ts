@@ -34,7 +34,7 @@ export const STORAGE_KEY = 'alef-bet';
 const VERSION = 1;
 export const HISTORY_LIMIT = 200;
 
-export const DEFAULT_SETTINGS: Settings = { group: 'all', script: 'print', autoNext: true, showAnswerForms: false };
+export const DEFAULT_SETTINGS: Settings = { group: 'all', script: 'print', autoNext: false, showAnswerForms: false };
 
 export function emptyState(): SavedState {
   return { settings: { ...DEFAULT_SETTINGS }, letterStats: {}, history: [] };
