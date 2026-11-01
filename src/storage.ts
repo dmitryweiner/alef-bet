@@ -2,7 +2,7 @@ import { letters, type Group } from './letters';
 import type { Script } from './round';
 import type { LetterStat, LetterStats } from './stats';
 
-export type Mode = 'quiz' | 'typed' | 'pairs';
+export type Mode = 'quiz' | 'typed' | 'pairs' | 'reading';
 
 export interface Settings {
   group: Group;
@@ -82,7 +82,7 @@ export function resetStats(state: SavedState): SavedState {
 
 const groups: readonly Group[] = ['all', 'final', 'full', 'each'];
 const scripts: readonly Script[] = ['print', 'hand', 'mixed'];
-const modes: readonly Mode[] = ['quiz', 'typed', 'pairs'];
+const modes: readonly Mode[] = ['quiz', 'typed', 'pairs', 'reading'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

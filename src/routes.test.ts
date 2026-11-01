@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { hashForView, viewFromHash } from './routes';
+import { hashForView, isGame, viewFromHash, type View } from './routes';
+
+const views: View[] = ['alphabet', 'nikud', 'quiz', 'typed', 'pairs', 'reading'];
 
 describe('routes', () => {
   it('maps every view to its own hash and back', () => {
-    for (const view of ['quiz', 'typed', 'pairs', 'alphabet'] as const) {
+    for (const view of views) {
       expect(viewFromHash(hashForView(view))).toBe(view);
     }
-    expect(new Set(['quiz', 'typed', 'pairs', 'alphabet'].map((v) => hashForView(v as 'quiz'))).size).toBe(4);
+    expect(new Set(views.map(hashForView)).size).toBe(views.length);
   });
 
   it('uses readable game names', () => {
@@ -14,6 +16,8 @@ describe('routes', () => {
     expect(hashForView('typed')).toBe('#type');
     expect(hashForView('pairs')).toBe('#pairs');
     expect(hashForView('alphabet')).toBe('#alphabet');
+    expect(hashForView('nikud')).toBe('#nikud');
+    expect(hashForView('reading')).toBe('#read');
   });
 
   it('accepts a hash with a leading slash and ignores case', () => {
@@ -25,5 +29,9 @@ describe('routes', () => {
     expect(viewFromHash('')).toBe('quiz');
     expect(viewFromHash('#')).toBe('quiz');
     expect(viewFromHash('#nope')).toBe('quiz');
+  });
+
+  it('tells games from reference pages', () => {
+    expect(views.filter(isGame)).toEqual(['quiz', 'typed', 'pairs', 'reading']);
   });
 });

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startApp } from './app';
+import { markByKey, marks } from './nikud';
+import { readingWords } from './reading';
 import { seededRandom } from './selection';
 import { STORAGE_KEY, loadState, saveState, emptyState, type KeyValueStorage } from './storage';
 
@@ -76,7 +78,8 @@ describe('layout', () => {
 describe('navigation', () => {
   it('shows tabs as links to game hashes without numbers', () => {
     const tabs = [...document.querySelectorAll<HTMLAnchorElement>('nav [data-view]')];
-    expect(tabs.map((t) => t.getAttribute('href'))).toEqual(['#guess', '#type', '#pairs', '#alphabet']);
+    expect(tabs.map((t) => t.getAttribute('href'))).toEqual(['#alphabet', '#nikud', '#pairs', '#guess', '#type', '#read']);
+    expect(tabs.map((t) => t.textContent)).toEqual(['Алфавит', 'Некудот', 'Найди пару', 'Угадай букву', 'Впиши название', 'Как читать']);
     for (const t of tabs) expect(t.textContent).not.toMatch(/\d/);
   });
 
@@ -362,5 +365,165 @@ describe('statistics reset', () => {
     expect(loadState(storage).history).toHaveLength(1);
     expect(document.querySelector('#reset-confirm')).toBeNull();
     expect($<HTMLButtonElement>('#reset-stats').hidden).toBe(false);
+  });
+});
+
+describe('nikud reference', () => {
+  const openNikud = () => {
+    history.replaceState(null, '', '#nikud');
+    start();
+  };
+  const markButton = (key: string) => $<HTMLButtonElement>(`.letter-card[data-mark="${markByKey(key).id}"]`);
+
+  it('hides the settings and statistics', () => {
+    openNikud();
+    expect(activeTab()).toBe('nikud');
+    expect($<HTMLElement>('aside').hidden).toBe(true);
+    expect($<HTMLElement>('#letter-stats').hidden).toBe(true);
+  });
+
+  it('shows every mark on a card in print and handwriting', () => {
+    openNikud();
+    const cards = document.querySelectorAll('.letter-card[data-mark]');
+    expect(cards).toHaveLength(marks.length);
+    expect(cards[0]!.querySelectorAll('span[lang="he"]')).toHaveLength(2);
+    expect(cards[0]!.textContent).toContain(marks[0]!.sample);
+  });
+
+  it('describes the selected mark in detail', () => {
+    openNikud();
+    markButton('holam').click();
+    const detail = $('.detail').textContent!;
+    expect(detail).toContain('Холам');
+    expect(detail).toContain('חולם');
+    expect(detail).toContain('«о»');
+    expect(detail).toContain(markByKey('holam').example.word);
+    expect(detail).toContain('нет');
+  });
+
+  it('places the description above the marks', () => {
+    openNikud();
+    expect($('.detail').compareDocumentPosition($('.alphabet-grid')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('opens related marks from the detail card', () => {
+    openNikud();
+    markButton('kamatz').click();
+    $<HTMLButtonElement>(`.detail [data-mark="${markByKey('patah').id}"]`).click();
+    expect($('.detail h3').textContent).toContain('Патах');
+  });
+
+  it('lets the player close the description and opens it again on a mark tap', () => {
+    openNikud();
+    $<HTMLButtonElement>('#detail-close').click();
+    expect(document.querySelector('.detail')).toBeNull();
+    markButton('segol').click();
+    expect($('.detail h3').textContent).toContain('Сеголь');
+  });
+});
+
+function readAndContinue(pick: 'first' | 'correct' | 'wrong' = 'first') {
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-answer]')];
+  const reading = $<HTMLElement>('.letter-stage [data-reading]').dataset.reading!;
+  const isCorrect = (b: HTMLButtonElement) => b.getAttribute('aria-label')!.endsWith(`: ${reading}`);
+  const button = pick === 'correct' ? buttons.find(isCorrect) : pick === 'wrong' ? buttons.find((b) => !isCorrect(b)) : buttons[0];
+  button!.click();
+  $<HTMLButtonElement>('#next').click();
+  return reading;
+}
+
+describe('reading game', () => {
+  const openReading = () => {
+    history.replaceState(null, '', '#read');
+    start();
+  };
+
+  it('asks how a word with nikud is read and offers four readings', () => {
+    openReading();
+    expect(activeTab()).toBe('reading');
+    expect($('.prompt h2').textContent).toBe('Как читается это слово?');
+    expect($('.letter-stage [data-reading]').textContent).toMatch(/^[\u05d0-\u05ea\u05b0-\u05c7]+$/);
+    expect(document.querySelectorAll('[data-answer]')).toHaveLength(4);
+    expect($('.round-head').textContent).toContain('Вопрос 1 из 10');
+  });
+
+  it('counts a correct reading and explains it', () => {
+    openReading();
+    const reading = $<HTMLElement>('.letter-stage [data-reading]').dataset.reading!;
+    [...document.querySelectorAll<HTMLButtonElement>('[data-answer]')].find((b) => b.getAttribute('aria-label')!.endsWith(`: ${reading}`))!.click();
+    expect($('#score').textContent).toBe('1');
+    expect($('.feedback.good').textContent).toContain('Верно');
+    expect($('.feedback').textContent).toContain(`«${reading}»`);
+    const shown = readingWords.find((w) => w.word === $('.letter-stage [data-reading]').textContent)!;
+    expect($('.feedback .meaning').textContent).toContain(shown.translation);
+    expect(document.querySelector('.answer.correct')).not.toBeNull();
+  });
+
+  it('marks a wrong reading and shows the right one with its meaning', () => {
+    openReading();
+    const wrong = [...document.querySelectorAll<HTMLButtonElement>('[data-answer]')].find(
+      (b) => !b.getAttribute('aria-label')!.endsWith(`: ${$<HTMLElement>('.letter-stage [data-reading]').dataset.reading}`),
+    )!;
+    wrong.click();
+    expect(wrong.classList.contains('wrong')).toBe(true);
+    expect(document.querySelector('.answer.correct')).not.toBeNull();
+    expect($('.feedback.bad .meaning').textContent).toMatch(/^Перевод: /);
+  });
+
+  it('gives the vowel as a hint', () => {
+    openReading();
+    $<HTMLButtonElement>('#hint').click();
+    expect($('#hinttext').textContent).toMatch(/читается «[аэиоу]»/);
+  });
+
+  it('saves the result without touching letter statistics', () => {
+    openReading();
+    for (let i = 0; i < 10; i++) readAndContinue('correct');
+    expect($('.result').textContent).toContain('Все слова прочитаны');
+    const state = loadState(storage);
+    expect(state.letterStats).toEqual({});
+    expect(state.history).toEqual([{ finishedAt: NOW, mode: 'reading', group: 'all', script: 'print', score: 10, hinted: 0, errors: 0, total: 10 }]);
+  });
+
+  it('lists missed words and opens their vowel in the nikud reference', async () => {
+    openReading();
+    for (let i = 0; i < 10; i++) readAndContinue('wrong');
+    expect($('.review').querySelectorAll('span[lang="he"]').length).toBeGreaterThan(0);
+    const missed = readingWords.find((w) => w.word === $('.review span[lang="he"]').textContent)!;
+    expect($('.review').textContent).toContain(missed.translation);
+    const changed = nextHashChange();
+    $<HTMLButtonElement>('#review').click();
+    await changed;
+    expect(location.hash).toBe('#nikud');
+    expect(document.querySelector('.detail')).not.toBeNull();
+  });
+
+  it('hides the letter set setting and the letter statistics', async () => {
+    openReading();
+    expect($<HTMLElement>('#group').hidden).toBe(true);
+    expect($<HTMLElement>('label[for="group"]').hidden).toBe(true);
+    for (let i = 0; i < 10; i++) readAndContinue('first');
+    expect($<HTMLElement>('#letter-stats').hidden).toBe(true);
+    const changed = nextHashChange();
+    location.hash = '#guess';
+    await changed;
+    expect($<HTMLElement>('#group').hidden).toBe(false);
+  });
+
+  it('shows the word in every script after the answer when asked to', () => {
+    saveState(storage, { ...emptyState(), settings: { group: 'all', script: 'print', autoNext: false, showAnswerForms: true } });
+    openReading();
+    const reading = $<HTMLElement>('.letter-stage [data-reading]');
+    const word = reading.textContent!;
+    document.querySelector<HTMLButtonElement>('[data-answer]')!.click();
+    expect(document.querySelectorAll('.answer-forms-grid .glyph')).toHaveLength(3);
+    expect($('.answer-forms-grid').textContent).toContain(word);
+  });
+
+  it('answers with the number keys', () => {
+    openReading();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '2', bubbles: true }));
+    expect(document.querySelectorAll<HTMLButtonElement>('[data-answer]')[1]!.disabled).toBe(true);
+    expect(document.querySelector('#next')).not.toBeNull();
   });
 });

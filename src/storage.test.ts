@@ -103,6 +103,15 @@ describe('loadState with the "each" set', () => {
   });
 });
 
+describe('loadState with the reading game', () => {
+  it('keeps results of the reading game', () => {
+    const storage = new MemoryStorage();
+    const state: SavedState = { ...emptyState(), history: [result(7), { ...result(9), mode: 'reading' }] };
+    saveState(storage, state);
+    expect(loadState(storage)).toEqual(state);
+  });
+});
+
 describe('saveState', () => {
   it('reports failure instead of throwing when storage is full', () => {
     const storage: KeyValueStorage = {
