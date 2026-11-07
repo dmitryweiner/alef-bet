@@ -9,11 +9,13 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
     "jsdom": "^29.1.1",
+    "playwright": "^1.65.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^4.1.12"

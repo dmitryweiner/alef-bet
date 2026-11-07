@@ -12,8 +12,19 @@ Node.js — версия из `.node-version` (`fnm use`).
 - `npm test` — юнит-тесты (`npm run test:watch` — в режиме наблюдения).
 - `npm run typecheck` — проверка типов.
 - `npm run build` — проверка типов и сборка в `dist/`.
+- `npm run smoke` — браузерная проверка (Playwright) на дев-сервере;
+  `npm run smoke -- --preview` — на свежей сборке, плюс работа без сети и доставка
+  новой версии на уже открытую страницу; `--shots` сохраняет скриншоты в `shots/`.
+  Первый запуск: `npx playwright install chromium`.
 
-CI (`.github/workflows/ci.yml`) запускает typecheck, тесты и сборку на каждый push и PR;
+## Скрипты
+
+- `scripts/smoke.mjs` — шаги браузерной проверки; новая проверка — новый шаг здесь,
+  а не новый скрипт.
+- `scripts/lib/harness.mjs` — общий код: флаги, запуск сервера на своих портах
+  (дев 5392, preview 4392, `--strictPort`), сбор ошибок консоли.
+
+CI (`.github/workflows/ci.yml`) запускает typecheck, тесты, smoke на сборке и сборку на каждый push и PR;
 пуш в `main` публикует `dist/` на GitHub Pages.
 
 ## Разработка через TDD — обязательно
@@ -26,7 +37,8 @@ CI (`.github/workflows/ci.yml`) запускает typecheck, тесты и сб
 3. Отрефактори, не ломая тесты.
 
 Изменения без теста не принимаются. Перед завершением работы `npm run typecheck`,
-`npm test` и `npm run build` должны проходить.
+`npm test`, `npm run build` и `npm run smoke -- --preview` должны проходить.
+То, что видно только в настоящем браузере (service worker, вёрстка), проверяется шагом smoke.
 
 ## Структура
 

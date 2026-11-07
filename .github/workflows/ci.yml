@@ -25,6 +25,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npx playwright install --with-deps chromium
+      # builds dist/ and checks it in a browser, offline and update included
+      - run: npm run smoke -- --preview
       - run: npx vite build
       - uses: actions/upload-pages-artifact@v5
         with:
