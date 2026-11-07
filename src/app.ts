@@ -2,8 +2,8 @@ import { formatAgo, pluralRu } from './format';
 import { BASE_LETTER_COUNT, letterPool, letters, type Group, type Letter } from './letters';
 import { matchesName, normalizeName } from './names';
 import { createQuestions, type Question, type Script } from './round';
-import { markDetails, marks, type Mark, type MarkSection } from './nikud';
-import { createReadingQuestions, type ReadingQuestion } from './reading';
+import { markDetails, markGroups, marks, type Mark, type Vowel } from './nikud';
+import { createReadingQuestions, vowelHint, type ReadingQuestion } from './reading';
 import { letterDetails } from './reference';
 import { hashForView, isGame, viewFromHash, type View } from './routes';
 import { ROUND_LENGTH, roundLetters, type Random } from './selection';
@@ -30,12 +30,7 @@ function hebrew(text: string, type: 'print' | 'hand', cls = '', attrs = ''): str
   return `<span lang="he" dir="rtl" class="${type === 'hand' ? 'hand ' : ''}${cls}"${attrs}>${text}</span>`;
 }
 
-const sectionNames: Record<MarkSection, string> = {
-  vowel: 'Гласные',
-  full: `Гласные с буквами ${hebrew('ו', 'print')} и ${hebrew('י', 'print')}`,
-  reduced: 'Сокращённые гласные',
-  other: 'Другие знаки',
-};
+const groupName = (vowel: Vowel | undefined) => (vowel ? `Звук «${vowel}»` : 'Шва и другие знаки');
 
 function glyph(l: Letter, type: 'print' | 'hand', cls = '', attrs = ''): string {
   return hebrew(l.char, type, cls, attrs);
@@ -60,9 +55,8 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
   let hintedScore = 0;
   let errors = 0;
   let answered = false;
-  let selected = 0;
-  let selectedMark = 0;
-  let detailOpen = true;
+  /** Letter or mark described on the open reference page; every visit to the page starts with none. */
+  let selectedId: number | undefined;
   let handReady = false;
   let advanceTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -228,15 +222,11 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     if (!handReady && (pairing || q.type === 'hand')) fontNotice();
   }
 
-  function readingHint(q: ReadingQuestion) {
-    return `Гласный — ${q.vowel.name.toLowerCase()} (${q.vowel.place}): читается «${q.vowel.vowel}».`;
-  }
-
   function renderReading() {
     const q = currentReading();
     const answers = q.options.map((o, i) => `<button class="answer" data-answer="${i}" aria-label="Вариант ${i + 1}: ${o}">${o}<span class="key">${i + 1}</span></button>`).join('');
-    board.innerHTML = `${roundHead('ЧТЕНИЕ С НЕКУДОТ')}<div class="prompt"><h2>Как читается это слово?</h2><div class="sub">Нажми на правильное чтение</div></div><div class="letter-stage">${stageHtml()}</div><div class="answers">${answers}</div><div id="response" aria-live="polite"></div>${hintHtml(q, readingHint(q))}`;
-    wireRound(q, readingHint(q));
+    board.innerHTML = `${roundHead('ЧТЕНИЕ С НЕКУДОТ')}<div class="prompt"><h2>Как читается это слово?</h2><div class="sub">Нажми на правильное чтение</div></div><div class="letter-stage">${stageHtml()}</div><div class="answers">${answers}</div><div id="response" aria-live="polite"></div>${hintHtml(q, vowelHint(q))}`;
+    wireRound(q, vowelHint(q));
     if (!handReady && q.type === 'hand') fontNotice();
   }
 
@@ -324,7 +314,9 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     q.correct = ok;
     countAnswer(ok, q.hintUsed);
     markAnswers((n) => q.options[n] === q.reading, choice);
-    const parts = q.parts.map(([text, sound], i) => `${i === 1 ? text.toLowerCase() : hebrew(text, 'print')} — ${sound ? `«${sound}»` : 'не читается'}`).join(', ');
+    const parts = q.parts
+      .map((p) => `${p.kind === 'mark' ? p.text.toLowerCase() : hebrew(p.text, 'print')} — ${p.sound ? `«${p.sound}»` : 'не читается'}${p.beforeLetter ? ' (читается перед буквой)' : ''}`)
+      .join(', ');
     showFeedback(ok, q.hintUsed, `${hebrew(q.word, 'print')} — «${q.reading}»`, `<span class="meaning">Перевод: <b>${q.translation}</b></span>${parts}.`);
   }
 
@@ -367,8 +359,7 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
       return {
         html: `<strong>Слова для повторения</strong><p>${words.map((q) => `<span>${hebrew(q.word, 'print')} ${q.reading} — ${q.translation}</span>`).join('')}</p><button class="hint" id="review">Повторить некудот</button>`,
         open: () => {
-          selectedMark = words[0]!.vowel.id;
-          navigate('nikud');
+          navigate('nikud', words[0]!.vowels[0]!.id);
         },
       };
     }
@@ -377,8 +368,7 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     return {
       html: `<strong>Буквы для повторения</strong><p>${unique.map((l) => `<span>${glyph(l, 'print')} ${l.name}</span>`).join('')}</p><button class="hint" id="review">Рассмотреть в алфавите</button>`,
       open: () => {
-        selected = unique[0]!.id;
-        navigate('alphabet');
+        navigate('alphabet', unique[0]!.id);
       },
     };
   }
@@ -392,15 +382,11 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     board.innerHTML = `<div class="result"><div class="result-icon" aria-hidden="true">${score >= 0.8 * total ? '✦' : 'א'}</div><h2>${score === total ? perfect : score >= 0.7 * total ? 'Отличный раунд!' : 'Ещё немного практики'}</h2><div class="big-score">${score}<span class="sub"> / ${total}</span></div><div class="result-stats"><span>Самостоятельно: <b>${score}</b></span><span>С подсказкой: <b>${hintedScore}</b></span><span>Ошибки: <b>${errors}</b></span></div><p>${score === total ? next : 'Каждая попытка помогает запомнить форму.<br>Можно повторить раунд без спешки.'}</p><button class="primary" id="again">Сыграть ещё раз</button>${review ? `<div class="review">${review.html}</div>` : ''}</div>`;
     required<HTMLButtonElement>('#again').onclick = begin;
     const r = document.querySelector<HTMLButtonElement>('#review');
-    if (r && review)
-      r.onclick = () => {
-        detailOpen = true;
-        review.open();
-      };
+    if (r && review) r.onclick = review.open;
   }
 
   function letterCards(list: Letter[]) {
-    const isSelected = (x: Letter) => detailOpen && x.id === selected;
+    const isSelected = (x: Letter) => x.id === selectedId;
     return `<div class="alphabet-grid">${list.map((x) => `<button class="letter-card ${isSelected(x) ? 'selected' : ''}" data-letter="${x.id}" aria-label="${x.name}" aria-pressed="${isSelected(x)}"><span class="forms">${glyph(x, 'print')}${glyph(x, 'hand')}</span><small>${x.name}</small></button>`).join('')}</div>`;
   }
 
@@ -425,18 +411,18 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
   }
 
   function renderAlphabet() {
-    const l = letters[selected] ?? letters[0]!;
-    board.innerHTML = `<div class="round-head"><span>Твой справочник</span><span class="pill">${BASE_LETTER_COUNT} БУКВЫ + ${letters.length - BASE_LETTER_COUNT} КОНЕЧНЫХ</span></div><h2>Печатная + письменная</h2><p class="sub">Нажми на букву: узнай её название, звук и пример слова.</p><div class="alphabet-body">${detailOpen ? detailHtml(l) : ''}${letterCards(letters.slice(0, BASE_LETTER_COUNT))}<h3 class="alphabet-section">Конечные формы</h3>${letterCards(letters.slice(BASE_LETTER_COUNT))}</div><p class="sub">Бет/вет, каф/хаф, пей/фей и шин/син — варианты звучания одной буквы. В игре мы используем её основное название. Почерк от руки может немного отличаться от образца.</p>`;
-    wireReference('letter', selected, (id) => (selected = id), renderAlphabet);
+    const l = selectedId === undefined ? undefined : letters[selectedId];
+    board.innerHTML = `<div class="round-head"><span>Твой справочник</span><span class="pill">${BASE_LETTER_COUNT} БУКВЫ + ${letters.length - BASE_LETTER_COUNT} КОНЕЧНЫХ</span></div><h2>Печатная + письменная</h2><p class="sub">Нажми на букву: узнай её название, звук и пример слова.</p><div class="alphabet-body">${l ? detailHtml(l) : ''}${letterCards(letters.slice(0, BASE_LETTER_COUNT))}<h3 class="alphabet-section">Конечные формы</h3>${letterCards(letters.slice(BASE_LETTER_COUNT))}</div><p class="sub">Бет/вет, каф/хаф, пей/фей и шин/син — варианты звучания одной буквы. В игре мы используем её основное название. Почерк от руки может немного отличаться от образца.</p>`;
+    wireReference('letter', renderAlphabet);
   }
 
   /** Card taps open the description of `data-<attr>` items; the close button hides it. */
-  function wireReference(attr: 'letter' | 'mark', current: number, choose: (id: number) => void, rerender: () => void) {
+  function wireReference(attr: 'letter' | 'mark', rerender: () => void) {
+    const current = selectedId;
     board.querySelectorAll<HTMLElement>(`[data-${attr}]`).forEach(
       (b) =>
         (b.onclick = () => {
-          choose(Number(b.getAttribute(`data-${attr}`)));
-          detailOpen = true;
+          selectedId = Number(b.getAttribute(`data-${attr}`));
           rerender();
           board.querySelector('.detail')?.scrollIntoView?.({ block: 'nearest' });
         }),
@@ -444,7 +430,7 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     const close = document.querySelector<HTMLButtonElement>('#detail-close');
     if (close)
       close.onclick = () => {
-        detailOpen = false;
+        selectedId = undefined;
         rerender();
         board.querySelector<HTMLElement>(`[data-${attr}="${current}"]`)?.focus({ preventScroll: true });
       };
@@ -452,7 +438,7 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
   }
 
   function markCards(list: Mark[]) {
-    const isSelected = (m: Mark) => detailOpen && m.id === selectedMark;
+    const isSelected = (m: Mark) => m.id === selectedId;
     return `<div class="alphabet-grid">${list.map((m) => `<button class="letter-card ${isSelected(m) ? 'selected' : ''}" data-mark="${m.id}" aria-label="${m.name}" aria-pressed="${isSelected(m)}"><span class="forms">${hebrew(m.sample, 'print')}${hebrew(m.sample, 'hand')}</span><small>${m.name}</small></button>`).join('')}</div>`;
   }
 
@@ -473,17 +459,19 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
   }
 
   function renderNikud() {
-    const m = marks[selectedMark] ?? marks[0]!;
-    const vowels = marks.filter((x) => x.section !== 'other').length;
-    const sections = (Object.keys(sectionNames) as MarkSection[])
-      .map((s) => `<h3 class="alphabet-section">${sectionNames[s]}</h3>${markCards(marks.filter((x) => x.section === s))}`)
+    const m = selectedId === undefined ? undefined : marks[selectedId];
+    const vowels = marks.filter((x) => x.vowel).length;
+    const sections = markGroups()
+      .map((g) => `<h3 class="alphabet-section">${groupName(g.vowel)}</h3>${markCards(g.marks)}`)
       .join('');
-    board.innerHTML = `<div class="round-head"><span>Твой справочник</span><span class="pill">${vowels} ГЛАСНЫХ + ${marks.length - vowels} ЗНАКА</span></div><h2>Некудот — огласовки</h2><p class="sub">Нажми на знак: узнай, как он читается, и посмотри пример слова.</p><div class="alphabet-body">${detailOpen ? markDetailHtml(m) : ''}${sections}</div><p class="sub">Буква со знаком читается «согласный + гласный»: ${hebrew('מַ', 'print')} — «ма». В обычных текстах огласовки почти не ставят, но они есть в детских книгах, словарях и учебниках.</p>`;
-    wireReference('mark', selectedMark, (id) => (selectedMark = id), renderNikud);
+    board.innerHTML = `<div class="round-head"><span>Твой справочник</span><span class="pill">${vowels} ГЛАСНЫХ + ${marks.length - vowels} ЗНАКА</span></div><h2>Некудот — огласовки</h2><p class="sub">Нажми на знак: узнай, как он читается, и посмотри пример слова.</p><div class="alphabet-body">${m ? markDetailHtml(m) : ''}${sections}</div><p class="sub">Буква со знаком читается «согласный + гласный»: ${hebrew('מַ', 'print')} — «ма». В обычных текстах огласовки почти не ставят, но они есть в детских книгах, словарях и учебниках.</p>`;
+    wireReference('mark', renderNikud);
   }
 
-  function navigate(v: View) {
+  /** Opens a view; `selection` opens the description of that letter or mark on a reference page. */
+  function navigate(v: View, selection?: number) {
     view = v;
+    selectedId = selection;
     begin();
     if (location.hash !== hashForView(v)) location.hash = hashForView(v);
   }
@@ -492,6 +480,7 @@ export function startApp({ storage, now = Date.now, random = Math.random }: AppO
     const v = viewFromHash(location.hash);
     if (v === view) return;
     view = v;
+    selectedId = undefined;
     begin();
   }
 

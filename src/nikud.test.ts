@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markByKey, markDetails, marks } from './nikud';
+import { markByKey, markDetails, markGroups, marks } from './nikud';
 
 const isPoint = (c: string) => c.charCodeAt(0) >= 0x5b0 && c.charCodeAt(0) <= 0x5c7;
 
@@ -25,9 +25,18 @@ describe('nikud marks', () => {
     }
   });
 
-  it('splits the reference into sections', () => {
-    const count = (s: string) => marks.filter((m) => m.section === s).length;
-    expect([count('vowel'), count('full'), count('reduced'), count('other')]).toEqual([7, 4, 4, 3]);
+  it('groups the reference by the vowel sound, signs without a vowel last', () => {
+    const groups = markGroups();
+    expect(groups.map((g) => g.vowel)).toEqual(['а', 'э', 'и', 'о', 'у', undefined]);
+    expect(groups.map((g) => g.marks.map((m) => m.key))).toEqual([
+      ['kamatz', 'patah', 'hatafPatah'],
+      ['tsere', 'segol', 'tsereMale', 'hatafSegol'],
+      ['hiriq', 'hiriqMale'],
+      ['holam', 'holamMale', 'hatafKamatz'],
+      ['kubuts', 'shuruk'],
+      ['shva', 'dagesh', 'shinDot', 'sinDot'],
+    ]);
+    for (const g of groups) for (const m of g.marks) expect(m.vowel).toBe(g.vowel);
   });
 
   it('links look-alike marks both ways', () => {

@@ -25,10 +25,10 @@ describe('routes', () => {
     expect(viewFromHash('#Alphabet')).toBe('alphabet');
   });
 
-  it('falls back to the first game for an empty or unknown hash', () => {
-    expect(viewFromHash('')).toBe('quiz');
-    expect(viewFromHash('#')).toBe('quiz');
-    expect(viewFromHash('#nope')).toBe('quiz');
+  it('falls back to the alphabet for an empty or unknown hash', () => {
+    expect(viewFromHash('')).toBe('alphabet');
+    expect(viewFromHash('#')).toBe('alphabet');
+    expect(viewFromHash('#nope')).toBe('alphabet');
   });
 
   it('tells games from reference pages', () => {

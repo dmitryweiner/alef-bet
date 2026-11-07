@@ -8,11 +8,11 @@ export function hashForView(view: View): string {
   return `#${slugs[view]}`;
 }
 
-/** Unknown or empty hashes open the first game. */
+/** Unknown or empty hashes open the alphabet. */
 export function viewFromHash(hash: string): View {
   const slug = hash.replace(/^#\/?/, '').toLowerCase();
   const found = (Object.keys(slugs) as View[]).find((v) => slugs[v] === slug);
-  return found ?? 'quiz';
+  return found ?? 'alphabet';
 }
 
 /** Games have rounds and scores; the other views are reference pages. */

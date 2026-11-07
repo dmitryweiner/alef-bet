@@ -35,7 +35,8 @@ const start = () => (stop = startApp({ storage, now: () => NOW, random: seededRa
 beforeEach(() => {
   document.body.innerHTML = body;
   storage = new MemoryStorage();
-  history.replaceState(null, '', location.pathname);
+  // Most tests play «Угадай букву»; the start page without a hash is tested on its own.
+  history.replaceState(null, '', `${location.pathname}#guess`);
 });
 
 afterEach(() => {
@@ -81,6 +82,13 @@ describe('navigation', () => {
     expect(tabs.map((t) => t.getAttribute('href'))).toEqual(['#alphabet', '#nikud', '#pairs', '#guess', '#type', '#read']);
     expect(tabs.map((t) => t.textContent)).toEqual(['Алфавит', 'Некудот', 'Найди пару', 'Угадай букву', 'Впиши название', 'Как читать']);
     for (const t of tabs) expect(t.textContent).not.toMatch(/\d/);
+  });
+
+  it('opens the alphabet when there is no hash', () => {
+    history.replaceState(null, '', location.pathname);
+    start();
+    expect(activeTab()).toBe('alphabet');
+    expect(document.querySelector('.alphabet-grid')).not.toBeNull();
   });
 
   it('opens the game from the hash on start', () => {
@@ -150,8 +158,37 @@ describe('alphabet reference', () => {
     expect(detail).toContain('13');
   });
 
+  it('shows no description and no selected letter when opened', () => {
+    openAlphabet();
+    expect(document.querySelector('.detail')).toBeNull();
+    expect(document.querySelector('.letter-card[aria-pressed="true"]')).toBeNull();
+  });
+
+  it('forgets the selected letter when the player leaves the tab', async () => {
+    openAlphabet();
+    $<HTMLButtonElement>('[data-letter="12"]').click();
+    let changed = nextHashChange();
+    location.hash = '#guess';
+    await changed;
+    changed = nextHashChange();
+    location.hash = '#alphabet';
+    await changed;
+    expect(document.querySelector('.detail')).toBeNull();
+    expect(document.querySelector('.letter-card[aria-pressed="true"]')).toBeNull();
+  });
+
+  it('does not open a description in the nikud reference after choosing a letter', async () => {
+    openAlphabet();
+    $<HTMLButtonElement>('[data-letter="0"]').click();
+    const changed = nextHashChange();
+    location.hash = '#nikud';
+    await changed;
+    expect(document.querySelector('.detail')).toBeNull();
+  });
+
   it('places the letter description above the alphabet', () => {
     openAlphabet();
+    $<HTMLButtonElement>('[data-letter="12"]').click();
     expect($('.detail').compareDocumentPosition($('.alphabet-grid')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -168,7 +205,6 @@ describe('alphabet reference', () => {
   it('opens the description when reviewing letters after a round', async () => {
     saveState(storage, { ...emptyState(), settings: { group: 'all', script: 'print', autoNext: false, showAnswerForms: false } });
     openAlphabet();
-    $<HTMLButtonElement>('#detail-close').click();
     const changed = nextHashChange();
     location.hash = '#guess';
     await changed;
@@ -401,8 +437,35 @@ describe('nikud reference', () => {
     expect(detail).toContain('нет');
   });
 
+  it('groups the marks by how they are read', () => {
+    openNikud();
+    const headings = [...document.querySelectorAll('.alphabet-section')].map((h) => h.textContent);
+    expect(headings).toEqual(['Звук «а»', 'Звук «э»', 'Звук «и»', 'Звук «о»', 'Звук «у»', 'Шва и другие знаки']);
+    expect($('.pill').textContent).toBe('14 ГЛАСНЫХ + 4 ЗНАКА');
+  });
+
+  it('shows no description and no selected mark when opened', () => {
+    openNikud();
+    expect(document.querySelector('.detail')).toBeNull();
+    expect(document.querySelector('.letter-card[aria-pressed="true"]')).toBeNull();
+  });
+
+  it('forgets the selected mark when the player leaves the tab', async () => {
+    openNikud();
+    markButton('holam').click();
+    let changed = nextHashChange();
+    location.hash = '#read';
+    await changed;
+    changed = nextHashChange();
+    location.hash = '#nikud';
+    await changed;
+    expect(document.querySelector('.detail')).toBeNull();
+    expect(document.querySelector('.letter-card[aria-pressed="true"]')).toBeNull();
+  });
+
   it('places the description above the marks', () => {
     openNikud();
+    markButton('holam').click();
     expect($('.detail').compareDocumentPosition($('.alphabet-grid')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -415,8 +478,10 @@ describe('nikud reference', () => {
 
   it('lets the player close the description and opens it again on a mark tap', () => {
     openNikud();
+    markButton('holam').click();
     $<HTMLButtonElement>('#detail-close').click();
     expect(document.querySelector('.detail')).toBeNull();
+    expect(document.querySelector('.letter-card[aria-pressed="true"]')).toBeNull();
     markButton('segol').click();
     expect($('.detail h3').textContent).toContain('Сеголь');
   });
