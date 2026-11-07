@@ -45,6 +45,10 @@ describe('loadState', () => {
     expect(DEFAULT_SETTINGS.autoNext).toBe(false);
   });
 
+  it('shows all forms after an answer by default', () => {
+    expect(DEFAULT_SETTINGS.showAnswerForms).toBe(true);
+  });
+
   it('returns defaults for corrupted JSON', () => {
     const storage = new MemoryStorage();
     storage.setItem(STORAGE_KEY, '{oops');

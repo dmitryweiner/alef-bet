@@ -248,6 +248,11 @@ describe('settings', () => {
     expect($<HTMLInputElement>('#auto-next').checked).toBe(false);
   });
 
+  it('shows all forms after an answer by default', () => {
+    start();
+    expect($<HTMLInputElement>('#show-answer-forms').checked).toBe(true);
+  });
+
   it('waits for the player before the next question by default', () => {
     start();
     document.querySelector<HTMLButtonElement>('[data-answer]')!.click();
@@ -514,12 +519,13 @@ describe('reading game', () => {
 
   it('counts a correct reading and explains it', () => {
     openReading();
-    const reading = $<HTMLElement>('.letter-stage [data-reading]').dataset.reading!;
+    const stage = $<HTMLElement>('.letter-stage [data-reading]');
+    const reading = stage.dataset.reading!;
+    const shown = readingWords.find((w) => w.word === stage.textContent)!;
     [...document.querySelectorAll<HTMLButtonElement>('[data-answer]')].find((b) => b.getAttribute('aria-label')!.endsWith(`: ${reading}`))!.click();
     expect($('#score').textContent).toBe('1');
     expect($('.feedback.good').textContent).toContain('Верно');
     expect($('.feedback').textContent).toContain(`«${reading}»`);
-    const shown = readingWords.find((w) => w.word === $('.letter-stage [data-reading]').textContent)!;
     expect($('.feedback .meaning').textContent).toContain(shown.translation);
     expect(document.querySelector('.answer.correct')).not.toBeNull();
   });

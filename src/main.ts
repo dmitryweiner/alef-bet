@@ -4,4 +4,4 @@ import { registerServiceWorker } from './pwa';
 import { browserStorage } from './storage';
 
 startApp({ storage: browserStorage() });
-if (import.meta.env.PROD) registerServiceWorker(navigator, window);
+if (import.meta.env.PROD) registerServiceWorker(navigator, window, document);
